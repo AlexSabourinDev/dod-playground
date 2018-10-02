@@ -78,22 +78,20 @@ struct Entities
     std::vector<PositionComponent> m_Positions;
     std::vector<SpriteComponent> m_Sprites;
     std::vector<MoveComponent> m_Moves;
+
+	EntityID m_IdGenerator = 0;
     
     void reserve(size_t n)
     {
-        m_Positions.reserve(n);
-        m_Sprites.reserve(n);
-        m_Moves.reserve(n);
+        m_Positions.resize(n);
+        m_Sprites.resize(n);
+        m_Moves.resize(n);
     }
     
-    EntityID AddEntity()
-    {
-        EntityID id = m_Positions.size();
-        m_Positions.push_back(PositionComponent());
-        m_Sprites.push_back(SpriteComponent());
-        m_Moves.push_back(MoveComponent());
-        return id;
-    }
+	EntityID AddEntity()
+	{
+		return m_IdGenerator++;
+	}
 };
 
 
@@ -107,42 +105,39 @@ static Entities s_Objects;
 
 struct MoveSystem
 {
-    std::vector<EntityID> entities; // IDs of objects that should be moved
+    __declspec(noinline) void UpdateSystem(double time, float deltaTime)
+    {
+		// Cache pointer for debug performance
+		PositionComponent* positionsData = s_Objects.m_Positions.data();
+		MoveComponent* movementsData = s_Objects.m_Moves.data();
 
-    void AddObjectToSystem(EntityID id)
-    {
-        entities.emplace_back(id);
-    }
-    
-    void UpdateSystem(double time, float deltaTime)
-    {
         // go through all the objects
-        for (size_t io = 0, no = entities.size(); io != no; ++io)
+        for (size_t io = 0, no = kObjectCount + kAvoidCount; io != no; ++io)
         {
-            PositionComponent& pos = s_Objects.m_Positions[io];
-            MoveComponent& move = s_Objects.m_Moves[io];
+            PositionComponent& pos = positionsData[io];
+            MoveComponent& move = movementsData[io];
             
             // update position based on movement velocity & delta time
             pos.x += move.velx * deltaTime;
             pos.y += move.vely * deltaTime;
             
             // check against world bounds; put back onto bounds and mirror the velocity component to "bounce" back
-            if (pos.x <= Entities::s_WorldBounds.xMin)
+            if (pos.x < Entities::s_WorldBounds.xMin)
             {
                 move.velx = -move.velx;
                 pos.x = (float)Entities::s_WorldBounds.xMin;
             }
-            if (pos.x >= Entities::s_WorldBounds.xMax)
+            if (pos.x > Entities::s_WorldBounds.xMax)
             {
                 move.velx = -move.velx;
                 pos.x = (float)Entities::s_WorldBounds.xMax;
             }
-            if (pos.y <= Entities::s_WorldBounds.yMin)
+            if (pos.y < Entities::s_WorldBounds.yMin)
             {
                 move.vely = -move.vely;
                 pos.y = (float)Entities::s_WorldBounds.yMin;
             }
-            if (pos.y >= Entities::s_WorldBounds.yMax)
+			if (pos.y > Entities::s_WorldBounds.yMax)
             {
                 move.vely = -move.vely;
                 pos.y = (float)Entities::s_WorldBounds.yMax;
@@ -162,22 +157,13 @@ struct AvoidanceSystem
 {
     static constexpr float kAvoidDistance = 1.3f;
 
-    void ResolveCollision(EntityID id, float deltaTime)
-    {
-        PositionComponent& pos = s_Objects.m_Positions[id];
-        MoveComponent& move = s_Objects.m_Moves[id];
-
-        // flip velocity
-        move.velx = -move.velx;
-        move.vely = -move.vely;
-        
-        // move us out of collision, by moving just a tiny bit more than we'd normally move during a frame
-        pos.x += move.velx * deltaTime * 1.1f;
-        pos.y += move.vely * deltaTime * 1.1f;
-    }
-    
     void UpdateSystem(double time, float deltaTime)
     {
+		// Cache pointer for debug performance
+		PositionComponent* positionsData = s_Objects.m_Positions.data();
+		SpriteComponent* spritesData = s_Objects.m_Sprites.data();
+		MoveComponent* movesData = s_Objects.m_Moves.data();
+
         constexpr unsigned int kCellCount = 64;
         constexpr unsigned int kShiftAmount = 6;
         constexpr unsigned int kGridCellSize[2] = { (Entities::s_WorldBounds.xMax - Entities::s_WorldBounds.xMin) / kCellCount, (Entities::s_WorldBounds.yMax - Entities::s_WorldBounds.yMin) / kCellCount };
@@ -187,7 +173,7 @@ struct AvoidanceSystem
 
         for (size_t ia = kObjectCount, na = kObjectCount + kAvoidCount; ia != na; ++ia)
         {
-            const PositionComponent& avoidposition = s_Objects.m_Positions[ia];
+            const PositionComponent& avoidposition = positionsData[ia];
 
             unsigned int topRight[2] = { (unsigned int)(avoidposition.x + kAvoidDistance - (float)Entities::s_WorldBounds.xMin) / kGridCellSize[0], (unsigned int)(avoidposition.y + kAvoidDistance - (float)Entities::s_WorldBounds.yMin) / kGridCellSize[1] };
             topRight[0] = topRight[0] - ((topRight[0] & kCellCount) >> kShiftAmount);
@@ -211,7 +197,7 @@ struct AvoidanceSystem
         // go through all the objects
         for (size_t io = 0, no = kObjectCount; io != no; ++io)
         {
-            const PositionComponent& myposition = s_Objects.m_Positions[io];
+            PositionComponent& myposition = positionsData[io];
 
             unsigned int x = (unsigned int)(myposition.x - (float)Entities::s_WorldBounds.xMin) / kGridCellSize[0];
             x = x - ((x & kCellCount) >> kShiftAmount);
@@ -225,18 +211,26 @@ struct AvoidanceSystem
             for (unsigned int ia = 0, na = activeAvoidCount[hash]; ia != na; ++ia)
             {
                 EntityID avoid = avoidEntityGrid[hash][ia];
-                const PositionComponent& avoidposition = s_Objects.m_Positions[avoid];
+                const PositionComponent& avoidposition = positionsData[avoid];
 
                 float dx = avoidposition.x - myposition.x;
                 float dy = avoidposition.y - myposition.y;
                 // is our position closer to "thing to avoid" position than the avoid distance?
                 if ((dx * dx + dy * dy) - kAvoidDistance * kAvoidDistance < 0.0f)
                 {
-                    ResolveCollision(io, deltaTime);
+					MoveComponent& move = movesData[io];
+
+					// flip velocity
+					move.velx = -move.velx;
+					move.vely = -move.vely;
+
+					// move us out of collision, by moving just a tiny bit more than we'd normally move during a frame
+					myposition.x += move.velx * deltaTime * 1.1f;
+					myposition.y += move.vely * deltaTime * 1.1f;
                     
                     // also make our sprite take the color of the thing we just bumped into
-                    SpriteComponent& avoidSprite = s_Objects.m_Sprites[avoid];
-                    SpriteComponent& mySprite = s_Objects.m_Sprites[io];
+                    SpriteComponent& avoidSprite = spritesData[avoid];
+                    SpriteComponent& mySprite = spritesData[io];
                     mySprite.colorR = avoidSprite.colorR;
                     mySprite.colorG = avoidSprite.colorG;
                     mySprite.colorB = avoidSprite.colorB;
@@ -255,26 +249,30 @@ static AvoidanceSystem s_AvoidanceSystem;
 
 extern "C" void game_initialize(void)
 {
-    s_Objects.reserve(1 + kObjectCount + kAvoidCount);
-    
+    s_Objects.reserve(kObjectCount + kAvoidCount);
+
+	// Cache for debug performance
+	PositionComponent* positionsData = s_Objects.m_Positions.data();
+	SpriteComponent* spritesData = s_Objects.m_Sprites.data();
+	MoveComponent* movesData = s_Objects.m_Moves.data();
+
     // create regular objects that move
     for (auto i = 0; i < kObjectCount; ++i)
     {
         EntityID go = s_Objects.AddEntity();
 
         // position it within world bounds
-        s_Objects.m_Positions[go].x = RandomFloat(Entities::s_WorldBounds.xMin, Entities::s_WorldBounds.xMax);
-        s_Objects.m_Positions[go].y = RandomFloat(Entities::s_WorldBounds.yMin, Entities::s_WorldBounds.yMax);
+        positionsData[go].x = RandomFloat(Entities::s_WorldBounds.xMin, Entities::s_WorldBounds.xMax);
+        positionsData[go].y = RandomFloat(Entities::s_WorldBounds.yMin, Entities::s_WorldBounds.yMax);
 
         // setup a sprite for it (random sprite index from first 5), and initial white color
-        s_Objects.m_Sprites[go].colorR = 255;
-        s_Objects.m_Sprites[go].colorG = 255;
-        s_Objects.m_Sprites[go].colorB = 255;
-        s_Objects.m_Sprites[go].spriteIndex = (uint8_t)(255 * RandomFloat(0.0f, 1.0f));
+        spritesData[go].colorR = 255;
+        spritesData[go].colorG = 255;
+        spritesData[go].colorB = 255;
+        spritesData[go].spriteIndex = (uint8_t)(255 * RandomFloat(0.0f, 1.0f));
 
         // make it move
         s_Objects.m_Moves[go].Initialize(0.5f, 0.7f);
-        s_MoveSystem.AddObjectToSystem(go);
     }
 
     // create objects that should be avoided
@@ -283,18 +281,17 @@ extern "C" void game_initialize(void)
         EntityID go = s_Objects.AddEntity();
         
         // position it in small area near center of world bounds
-        s_Objects.m_Positions[go].x = RandomFloat(Entities::s_WorldBounds.xMin, Entities::s_WorldBounds.xMax) * 0.2f;
-        s_Objects.m_Positions[go].y = RandomFloat(Entities::s_WorldBounds.yMin, Entities::s_WorldBounds.yMax) * 0.2f;
+        positionsData[go].x = RandomFloat(Entities::s_WorldBounds.xMin, Entities::s_WorldBounds.xMax) * 0.2f;
+        positionsData[go].y = RandomFloat(Entities::s_WorldBounds.yMin, Entities::s_WorldBounds.yMax) * 0.2f;
 
         // setup a sprite for it (6th one), and a random color
-        s_Objects.m_Sprites[go].colorR = (uint8_t)(255 * RandomFloat(0.5f, 1.0f));
-        s_Objects.m_Sprites[go].colorG = (uint8_t)(255 * RandomFloat(0.5f, 1.0f));
-        s_Objects.m_Sprites[go].colorB = (uint8_t)(255 * RandomFloat(0.5f, 1.0f));
-        s_Objects.m_Sprites[go].spriteIndex = 255;
+        spritesData[go].colorR = (uint8_t)(255 * RandomFloat(0.5f, 1.0f));
+        spritesData[go].colorG = (uint8_t)(255 * RandomFloat(0.5f, 1.0f));
+        spritesData[go].colorB = (uint8_t)(255 * RandomFloat(0.5f, 1.0f));
+        spritesData[go].spriteIndex = 255;
         
         // make it move, slowly
-        s_Objects.m_Moves[go].Initialize(0.1f, 0.2f);
-        s_MoveSystem.AddObjectToSystem(go);
+        movesData[go].Initialize(0.1f, 0.2f);
     }
 }
 
