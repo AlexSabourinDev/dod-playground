@@ -1,3 +1,12 @@
+# Preface - Alex S
+
+Optimization practice of Aras' dod-playground.
+
+Rules:
+- Make it fast
+- Looks like the original simulation
+
+Anything else is pretty much fair game!
 # dod-playground
 
 Sample OOP/ECS/DOD project (C++) for an internal Unity lecture in 2018, aimed at junior/future engineers.
