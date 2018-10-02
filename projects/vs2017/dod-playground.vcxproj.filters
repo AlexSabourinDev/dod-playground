@@ -5,6 +5,7 @@
       <Filter>external</Filter>
     </ClCompile>
     <ClCompile Include="..\..\source\application.c" />
+    <ClCompile Include="..\..\source\game.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="external">
@@ -12,9 +13,6 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\source\external\HandmadeMath.h">
-      <Filter>external</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\source\external\sokol_app.h">
       <Filter>external</Filter>
     </ClInclude>
@@ -27,5 +25,7 @@
     <ClInclude Include="..\..\source\external\stb_easy_font.h">
       <Filter>external</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\source\external\stb_image.h" />
+    <ClInclude Include="..\..\source\game.h" />
   </ItemGroup>
 </Project>

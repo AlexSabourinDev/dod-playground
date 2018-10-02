@@ -16,7 +16,8 @@ extern const char *vs_src, *fs_src;
 const int SAMPLE_COUNT = 4;
 sg_draw_state draw_state;
 
-static sprite_data_t* sprite_data;
+static sprite_sprite_data_t* sprite_sprite_data;
+static sprite_pos_data_t* sprite_pos_data;
 static uint64_t time;
 
 typedef struct {
@@ -35,8 +36,14 @@ void init(void) {
     });
 
     /* empty, dynamic instance-data vertex buffer*/
-    sg_buffer instancebuf = sg_make_buffer(&(sg_buffer_desc){
-        .size = kMaxSpriteCount * sizeof(sprite_data_t),
+    sg_buffer posinstancebuf = sg_make_buffer(&(sg_buffer_desc){
+        .size = kMaxSpriteCount * sizeof(sprite_pos_data_t),
+        .usage = SG_USAGE_STREAM
+    });
+
+
+    sg_buffer spriteinstancebuf = sg_make_buffer(&(sg_buffer_desc) {
+        .size = kMaxSpriteCount * sizeof(sprite_sprite_data_t),
         .usage = SG_USAGE_STREAM
     });
 
@@ -78,9 +85,10 @@ void init(void) {
     sg_pipeline pip = sg_make_pipeline(&(sg_pipeline_desc){
         .layout = {
             .buffers[0].step_func = SG_VERTEXSTEP_PER_INSTANCE,
+            .buffers[1].step_func = SG_VERTEXSTEP_PER_INSTANCE,
             .attrs = {
-                [0] = { .sem_name = "POSSCALE", .format=SG_VERTEXFORMAT_FLOAT3 }, // instance pos + scale
-                [1] = { .sem_name = "COLORSPRITE", .format=SG_VERTEXFORMAT_FLOAT4 }, // instance color
+                [0] = { .sem_name = "POS", .format=SG_VERTEXFORMAT_FLOAT2, .buffer_index = 0 }, // instance pos
+                [1] = { .sem_name = "COLORSPRITE", .format=SG_VERTEXFORMAT_UBYTE4N, .buffer_index = 1 }, // instance color
             },
         },
         .shader = shd,
@@ -103,13 +111,15 @@ void init(void) {
     /* draw state struct with resource bindings */
     draw_state = (sg_draw_state) {
         .pipeline = pip,
-        .vertex_buffers[0] = instancebuf,
+        .vertex_buffers[0] = posinstancebuf,
+        .vertex_buffers[1] = spriteinstancebuf,
         .index_buffer = ibuf,
         .fs_images[0] = tex,
     };
     
     stm_setup();
-    sprite_data = (sprite_data_t*)malloc(kMaxSpriteCount * sizeof(sprite_data_t));
+    sprite_pos_data = (sprite_pos_data_t*)malloc(kMaxSpriteCount * sizeof(sprite_pos_data_t));
+    sprite_sprite_data = (sprite_sprite_data_t*)malloc(kMaxSpriteCount * sizeof(sprite_sprite_data_t));
 
     uint64_t t0 = stm_now();
     game_initialize();
@@ -132,7 +142,7 @@ void frame(void) {
     uint64_t dt = stm_laptime(&time);
     
     uint64_t t0 = stm_now();
-    int sprite_count = game_update(sprite_data, stm_sec(time), (float)stm_sec(dt));
+    int sprite_count = game_update(sprite_pos_data, sprite_sprite_data, stm_sec(time), (float)stm_sec(dt));
     uint64_t tdiff = stm_diff(stm_now(), t0);
     // print times that game update took (print only on frames that are powers of two, to not
     // spam the output)
@@ -156,7 +166,8 @@ void frame(void) {
     }
 
     assert(sprite_count >= 0 && sprite_count <= kMaxSpriteCount);
-    sg_update_buffer(draw_state.vertex_buffers[0], sprite_data, sprite_count * sizeof(sprite_data[0]));
+    sg_update_buffer(draw_state.vertex_buffers[0], sprite_pos_data, sprite_count * sizeof(sprite_pos_data[0]));
+    sg_update_buffer(draw_state.vertex_buffers[1], sprite_sprite_data, sprite_count * sizeof(sprite_sprite_data[0]));
 
     sg_pass_action pass_action = {
         .colors[0] = { .action = SG_ACTION_CLEAR, .val = { 0.1f, 0.1f, 0.1f, 1.0f } }
@@ -236,7 +247,7 @@ const char* vs_src =
     "  float aspect;\n"
     "};\n"
     "struct vs_in {\n"
-    "  float4 posScale : POSSCALE;\n"
+    "  float4 pos : POS;\n"
     "  float4 colorIndex : COLORSPRITE;\n"
     "  uint vid : SV_VertexID;\n"
     "};\n"
@@ -249,11 +260,12 @@ const char* vs_src =
     "  v2f outp;\n"
     "  float x = inp.vid / 2;\n"
     "  float y = inp.vid & 1;\n"
-    "  outp.pos.x = inp.posScale.x + (x-0.5f) * inp.posScale.z;\n"
-    "  outp.pos.y = inp.posScale.y + (y-0.5f) * inp.posScale.z * aspect;\n"
+    "  float scale = floor(inp.colorIndex.w + 1.0f);\n"
+    "  outp.pos.x = inp.pos.x * 0.05f + (x-0.5f) * scale * 0.05f;\n"
+    "  outp.pos.y = inp.pos.y * 0.05f + (y-0.5f) * scale * 0.05f * aspect;\n"
     "  outp.pos.z = 0.0f;\n"
     "  outp.pos.w = 1.0f;\n"
-    "  outp.uv = float2((x + inp.colorIndex.w)/8,1-y);\n"
+    "  outp.uv = float2((x + floor(inp.colorIndex.w * 5.0f))/8,1-y);\n"
     "  outp.color = inp.colorIndex.rgb;\n"
     "  return outp;\n"
     "};\n";
