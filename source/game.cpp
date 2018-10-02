@@ -130,22 +130,22 @@ struct MoveSystem
             if (pos.x <= Entities::s_WorldBounds.xMin)
             {
                 move.velx = -move.velx;
-                pos.x = (float)Entities::s_WorldBounds.xMin + 1.0f;
+                pos.x = (float)Entities::s_WorldBounds.xMin;
             }
             if (pos.x >= Entities::s_WorldBounds.xMax)
             {
                 move.velx = -move.velx;
-                pos.x = (float)Entities::s_WorldBounds.xMax - 1.0f;
+                pos.x = (float)Entities::s_WorldBounds.xMax;
             }
             if (pos.y <= Entities::s_WorldBounds.yMin)
             {
                 move.vely = -move.vely;
-                pos.y = (float)Entities::s_WorldBounds.yMin + 1.0f;
+                pos.y = (float)Entities::s_WorldBounds.yMin;
             }
             if (pos.y >= Entities::s_WorldBounds.yMax)
             {
                 move.vely = -move.vely;
-                pos.y = (float)Entities::s_WorldBounds.yMax - 1.0f;
+                pos.y = (float)Entities::s_WorldBounds.yMax;
             }
         }
     }
